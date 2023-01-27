@@ -1,4 +1,4 @@
-from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QTimer, Qt
 from MicroManagerControl import MicroManagerControl
 import nidaqmx
 import nidaqmx.stream_writers
@@ -150,6 +150,8 @@ class NIDAQ(QObject):
                 self.event_thread.acquisition_started_event.connect(self.run_acquisition_task)
                 self.event_thread.acquisition_ended_event.connect(self.acq_done)
                 self.event_thread.mda_settings_event.connect(self.new_settings)
+        else:
+            return
         print(device, prop, value)
         if device in ["561_AOTF", "488_AOTF", 'exposure']:
             self.live.make_daq_data()
@@ -170,6 +172,7 @@ class NIDAQ(QObject):
     @pyqtSlot(object)
     def acq_done(self, _):
         # self.reset_exposure()
+        self.acq.wheel_timer.stop()
         self.event_thread.mda_settings_event.connect(self.new_settings)
         self.acq.set_z_position.emit(self.acq.orig_z_position)
         # self.event_thread.mda_settings_event.connect(self.new_settings)
@@ -284,6 +287,7 @@ class NIDAQ(QObject):
         else:
             for device in self.acq.daq_data:
                 plt.plot(device)
+
 
 
 class LiveMode(QObject):
@@ -418,7 +422,23 @@ class Acquisition(QObject):
             print("WARNING: Are the channels in the MDA pannel?")
             print(e)
             return False
+        
+        # Get las position where aotf blank is positive
+        print("========================================= TIMER INFO")
+        aotf_blank = timepoint[3,:]
+        print(np.max(np.argwhere(aotf_blank > 0)))
+        self.single_timepoint_time = np.max(np.argwhere(aotf_blank > 0))/self.ni.smpl_rate*1000
+
+
         timepoint = self.add_interval(timepoint)
+
+        # Setup channel switch if necessary
+        print(self.settings.interval_ms)
+        self.wheel_timer = QTimer()
+        self.wheel_timer.setTimerType(Qt.PreciseTimer)
+        self.wheel_timer.timeout.connect(self.move_wheel)
+        self.wheel_timer.setInterval(self.settings.interval_ms)
+
         # Make zstage go up/down over two timepoints
         if self.settings.acq_order_mode == 0:
             timepoint_inverse = self.ni.generate_one_timepoint(z_inverse=True)
@@ -464,6 +484,7 @@ class Acquisition(QObject):
         written = self.ni.stream.write_many_sample(self.daq_data, timeout=20)
         # time.sleep(0.5)
         self.ni.task.start()
+        QTimer.singleShot(self.single_timepoint_time, self.start_wheel_timer)
         print('================== Data written        ', written)
 
     def adjust_exposure(self):
@@ -478,6 +499,14 @@ class Acquisition(QObject):
         self.core.set_property("PrimeB_Camera", "Exposure", self.exposure)
         self.core.set_exposure(self.exposure)
 
+    def start_wheel_timer(self):
+        self.wheel_timer.start()
+
+    def move_wheel(self):
+        print("MOVE WHEEL NOW")
+        print(time.perf_counter())
+        print(self.wheel_timer.interval())
+        self.ni.event_thread.configuration_settings_event.emit('561_AOTF', "Channel", "toggle")
 
 def make_pulse(ni, start, end, offset):
     up = np.ones(round(ni.duty_cycle*ni.n_points))*start

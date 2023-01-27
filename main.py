@@ -5,9 +5,9 @@ from PyQt5 import QtWidgets
 from pymm_eventserver.event_thread import EventThread
 from gui.MainGUI import MainGUI
 from hardware.nidaq import NIDAQ
+from hardware.sutter import Lambda_10_B
 
-
-def main():
+def main(internal_filter: bool= False):
     app = QtWidgets.QApplication(sys.argv)
 
     topics = ["StandardEvent", "GUIRefreshEvent", "LiveMode", "Acquisition",
@@ -16,6 +16,9 @@ def main():
     event_listener = event_thread.listener
 
     mm_interface = MicroManagerControl(event_listener)
+
+    if internal_filter:
+        wheel = Lambda_10_B(event_thread = event_listener)
 
     ni = NIDAQ(event_listener, mm_interface)
     settings_view = SettingsView(event_listener)
@@ -52,4 +55,4 @@ except IndexError:
 
 
 if __name__ == "__main__":
-    flavour()
+    flavour(True)
