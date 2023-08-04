@@ -1,5 +1,7 @@
 # iSIM Control
 
+**This repository is archived!** The code is now located at https://github.com/LEB-EPFL/iSIM/tree/main.
+
 Python Control Interface for the iSIM at LEB-EPFL
 
 ## Installation
